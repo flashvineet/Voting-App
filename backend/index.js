@@ -8,7 +8,7 @@ const jwt = require("jsonwebtoken");
 const app = express();
 const server = http.createServer(app);
 
-// Use env vars
+// Env vars
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -29,11 +29,10 @@ app.use(
     credentials: true,
   })
 );
-
 app.use(bodyParser.json());
 
 let votes = { A: 0, B: 0, C: 0 };
-let votedUsers = new Set(); // track who voted (by username)
+let votedUsers = new Set(); // track users who already voted
 
 // LOGIN route → issue JWT
 app.post("/login", (req, res) => {
@@ -43,7 +42,6 @@ app.post("/login", (req, res) => {
   }
 
   const token = jwt.sign({ name }, JWT_SECRET, { expiresIn: "1d" });
-
   res.json({ message: "Login successful", token, user: name });
 });
 
@@ -51,7 +49,6 @@ app.post("/login", (req, res) => {
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
-
   if (!token) return res.status(401).json({ message: "No token provided" });
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -78,7 +75,6 @@ app.post("/vote", authenticateToken, (req, res) => {
   votedUsers.add(username);
 
   io.emit("voteUpdate", votes);
-
   res.json({ message: `Vote casted for ${option}`, votes });
 });
 
@@ -89,13 +85,13 @@ app.get("/results", (req, res) => {
 
 // Socket.IO
 io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
+  console.log("User connected:", socket.id);
   socket.emit("voteUpdate", votes);
   socket.on("disconnect", () => {
-    console.log("A user disconnected:", socket.id);
+    console.log("User disconnected:", socket.id);
   });
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`✅ Backend running on port ${PORT}`);
 });
