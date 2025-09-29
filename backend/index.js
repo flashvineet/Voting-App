@@ -56,7 +56,13 @@ app.post("/login", (req, res) => {
     return res.status(400).json({ message: "Name is required" });
   }
   req.session.user = { name, voted: false };
-  res.json({ message: "Login successful", user: name });
+   req.session.save((err) => {
+    if (err) {
+      console.error("Session save error:", err);
+      return res.status(500).json({ message: "Session error" });
+    }
+    res.json({ message: "Login successful", user: name });
+  });
 });
 
 // VOTE route
