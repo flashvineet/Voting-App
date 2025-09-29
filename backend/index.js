@@ -38,7 +38,7 @@ app.use(
   session({
     secret: SESSION_SECRET,
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     cookie: {
       secure: true,        // cookie only over HTTPS
       sameSite: "none",    // allow cross-site cookie (Vercel <-> Render)
