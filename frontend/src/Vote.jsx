@@ -30,21 +30,21 @@ const VotingApp = () => {
         transports: ["websocket", "polling"]
       });
 
-      socketRef.current.on('connect', () => {
-        setIsConnected(true);
-      });
-
-      socketRef.current.on('disconnect', () => {
-        setIsConnected(false);
-      });
-
-      socketRef.current.on('voteUpdate', (newResults) => {
-        updateResults(newResults);
-      });
-    } catch (error) {
-      console.error('Socket initialization failed:', error);
+      socketRef.current.on('connect', () => setIsConnected(true));
+      socketRef.current.on('disconnect', () => setIsConnected(false));
+      socketRef.current.on('voteUpdate', (newResults) => updateResults(newResults));
+      socketRef.current.on('connect_error', () => startPolling());
+    } catch {
+      startPolling();
     }
   }, []);
+
+  const startPolling = useCallback(() => {
+    if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+    refreshIntervalRef.current = setInterval(() => {
+      if (isLoggedIn) fetchResults();
+    }, 5000);
+  }, [isLoggedIn]);
 
   const updateResults = useCallback((newResults) => {
     setResults(newResults);
@@ -57,15 +57,14 @@ const VotingApp = () => {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE}/results`, {
-        headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        headers: { Authorization: `Bearer ${token}` }
       });
-
       if (response.ok) {
         const data = await response.json();
         updateResults(data.votes);
       }
     } catch (error) {
-      console.error('Error fetching results:', error);
+      console.error("Error fetching results:", error);
     }
   }, [updateResults]);
 
@@ -74,166 +73,116 @@ const VotingApp = () => {
       setLoginError('Please enter your name');
       return;
     }
-
     setIsLoading(true);
-    setLoginError('');
-
     try {
       const response = await fetch(`${API_BASE}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: username.trim() })
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        localStorage.setItem("token", data.token); // save JWT
-        setCurrentUser(data.user);
+        localStorage.setItem("token", data.token);
+        setCurrentUser(username.trim());
         setIsLoggedIn(true);
         fetchResults();
       } else {
-        setLoginError(data.message || 'Login failed');
+        setLoginError(data.message || "Login failed");
       }
-    } catch (error) {
-      setLoginError('Connection error. Please try again.');
-    } finally {
-      setIsLoading(false);
+    } catch {
+      setLoginError("Connection error. Please try again.");
     }
+    setIsLoading(false);
   };
 
   const handleVote = async (option) => {
     if (hasVoted) {
-      setVoteMessage({ type: 'warning', text: 'You already voted!' });
+      setVoteMessage({ type: "warning", text: "You already voted!" });
       return;
     }
-
-    if (!isLoggedIn) {
-      setVoteError('Please log in first');
-      return;
-    }
-
+    const token = localStorage.getItem("token");
     setIsVoting(true);
-    setVoteError('');
-
     try {
-      const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE}/vote`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ option })
+        body: JSON.stringify({ option }),
       });
-
       const data = await response.json();
-
       if (response.ok) {
         setHasVoted(true);
         setVotedOption(option);
-        setVoteMessage({ type: 'success', text: `Thanks for voting for Option ${option}!` });
-        setTimeout(() => fetchResults(), 500);
+        setVoteMessage({ type: "success", text: `Thanks for voting for Option ${option}!` });
+        fetchResults();
       } else {
-        setVoteError(data.message || 'Vote failed');
+        setVoteError(data.message || "Vote failed");
       }
-    } catch (error) {
-      setVoteError('Connection error. Please try again.');
-    } finally {
-      setIsVoting(false);
+    } catch {
+      setVoteError("Connection error. Please try again.");
     }
+    setIsVoting(false);
   };
-
-  useEffect(() => {
-    // auto-login if token exists
-    const token = localStorage.getItem("token");
-    if (token) {
-      setIsLoggedIn(true);
-      fetchResults();
-    }
-  }, [fetchResults]);
 
   useEffect(() => {
     initializeSocket();
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
     };
   }, [initializeSocket]);
 
   const chartData = [
-    { name: 'Option A', votes: results.A, fill: '#667eea' },
-    { name: 'Option B', votes: results.B, fill: '#764ba2' },
-    { name: 'Option C', votes: results.C, fill: '#6366f1' },
+    { name: "Option A", votes: results.A, fill: "#667eea" },
+    { name: "Option B", votes: results.B, fill: "#764ba2" },
+    { name: "Option C", votes: results.C, fill: "#6366f1" },
   ];
 
   return (
     <div className="voting-app">
-      <div className="voting-container">
-        <header className="voting-header">
-          <h1 className="voting-title">Real-Time Voting App</h1>
-          {isLoggedIn && (
-            <div className="user-welcome">
-              <span>Welcome, {currentUser}!</span>
-            </div>
-          )}
-        </header>
-
-        {!isLoggedIn && (
-          <div className="voting-card">
-            <h2 className="card-title">Login to Vote</h2>
-            <div className="login-container">
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Your name"
-                className="form-input"
-              />
-              <button onClick={handleLogin} disabled={isLoading} className="btn btn-primary">
-                {isLoading ? "Joining..." : "Join Voting"}
+      <h1>Real-Time Voting App</h1>
+      {!isLoggedIn ? (
+        <div>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Enter name"
+          />
+          <button onClick={handleLogin} disabled={isLoading}>
+            {isLoading ? "Joining..." : "Join Voting"}
+          </button>
+          {loginError && <p style={{ color: "red" }}>{loginError}</p>}
+        </div>
+      ) : (
+        <div>
+          <h2>Welcome, {currentUser}!</h2>
+          <div>
+            {["A", "B", "C"].map((opt) => (
+              <button
+                key={opt}
+                onClick={() => handleVote(opt)}
+                disabled={hasVoted || isVoting}
+              >
+                Vote {opt}
               </button>
-              {loginError && <div className="message error">{loginError}</div>}
-            </div>
+            ))}
           </div>
-        )}
-
-        {isLoggedIn && (
-          <>
-            <div className="voting-card">
-              <h2 className="card-title">Cast Your Vote</h2>
-              <div className="voting-options">
-                {['A', 'B', 'C'].map((option) => (
-                  <button
-                    key={option}
-                    onClick={() => handleVote(option)}
-                    disabled={hasVoted || isVoting}
-                    className={`vote-option ${votedOption === option ? 'voted' : ''}`}
-                  >
-                    Option {option}
-                  </button>
-                ))}
-              </div>
-              {voteMessage.text && <div className={`message ${voteMessage.type}`}>{voteMessage.text}</div>}
-              {voteError && <div className="message error">{voteError}</div>}
-            </div>
-
-            <div className="voting-card">
-              <h2 className="card-title">Live Results</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="votes" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-              <div>Total Votes: {totalVotes}</div>
-              <div>Last Updated: {lastUpdated || "Never"}</div>
-            </div>
-          </>
-        )}
-      </div>
+          {voteMessage.text && <p>{voteMessage.text}</p>}
+          {voteError && <p style={{ color: "red" }}>{voteError}</p>}
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="votes" />
+            </BarChart>
+          </ResponsiveContainer>
+          <p>Total Votes: {totalVotes}</p>
+        </div>
+      )}
     </div>
   );
 };
