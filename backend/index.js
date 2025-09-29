@@ -40,6 +40,7 @@ app.use(
     resave: false,
     saveUninitialized: true,
     cookie: {
+      httpOnly: true,
       secure: true,        // cookie only over HTTPS
       sameSite: "none",    // allow cross-site cookie (Vercel <-> Render)
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
