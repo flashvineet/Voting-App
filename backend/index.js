@@ -3,20 +3,32 @@ const session = require("express-session");
 const bodyParser = require("body-parser");
 const http = require("http");
 const { Server } = require("socket.io");
-const cors = require("cors");  
+const cors = require("cors");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }, 
-});
 
-const PORT = 5000;
+// Trust Render proxy (needed for secure cookies)
+app.set("trust proxy", 1);
+
+// Use env vars
+const PORT = process.env.PORT || 5000;
+const SESSION_SECRET = process.env.SESSION_SECRET || "fallback-secret";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
+// Socket.IO with proper CORS
+const io = new Server(server, {
+  cors: {
+    origin: FRONTEND_URL,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
 
 // Middleware
 app.use(
   cors({
-    origin: "http://localhost:5173", 
+    origin: FRONTEND_URL,
     credentials: true,
   })
 );
@@ -24,12 +36,16 @@ app.use(
 app.use(bodyParser.json());
 app.use(
   session({
-    secret: "voting-secret",
+    secret: SESSION_SECRET,
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
+    cookie: {
+      secure: true,        // cookie only over HTTPS
+      sameSite: "none",    // allow cross-site cookie (Vercel <-> Render)
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    },
   })
 );
-
 
 let votes = { A: 0, B: 0, C: 0 };
 
@@ -63,7 +79,7 @@ app.post("/vote", (req, res) => {
   votes[option] += 1;
   user.voted = true;
 
-  // Broadcast update to all connected clients
+  // Broadcast update to all clients
   io.emit("voteUpdate", votes);
 
   res.json({ message: `Vote casted for ${option}`, votes });
@@ -74,6 +90,7 @@ app.get("/results", (req, res) => {
   res.json({ votes });
 });
 
+// Socket.IO connections
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
   socket.emit("voteUpdate", votes);
@@ -82,6 +99,7 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(PORT, () => {
+// Start server
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
