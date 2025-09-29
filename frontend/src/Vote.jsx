@@ -22,12 +22,16 @@ const VotingApp = () => {
   const socketRef = useRef(null);
   const refreshIntervalRef = useRef(null);
 
-  const API_BASE = 'http://localhost:5000';
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
   const initializeSocket = useCallback(() => {
     try {
       if (typeof io !== 'undefined') {
-        socketRef.current = io(API_BASE);
+        socketRef.current = io(API_BASE, {
+            withCredentials: true,
+            transports: ["websocket", "polling"]
+          });
+
         
         socketRef.current.on('connect', () => {
           console.log('Connected to server');
