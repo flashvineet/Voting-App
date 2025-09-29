@@ -26,10 +26,7 @@ const VotingApp = () => {
 
   const initializeSocket = useCallback(() => {
     try {
-      socketRef.current = io(API_BASE, {
-        transports: ["websocket", "polling"]
-      });
-
+      socketRef.current = io(API_BASE, { transports: ["websocket", "polling"] });
       socketRef.current.on('connect', () => setIsConnected(true));
       socketRef.current.on('disconnect', () => setIsConnected(false));
       socketRef.current.on('voteUpdate', (newResults) => updateResults(newResults));
@@ -140,49 +137,101 @@ const VotingApp = () => {
     { name: "Option C", votes: results.C, fill: "#6366f1" },
   ];
 
+  const getPercentage = (votes) => {
+    return totalVotes > 0 ? (votes / totalVotes) * 100 : 0;
+  };
+
   return (
     <div className="voting-app">
-      <h1>Real-Time Voting App</h1>
-      {!isLoggedIn ? (
-        <div>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Enter name"
-          />
-          <button onClick={handleLogin} disabled={isLoading}>
-            {isLoading ? "Joining..." : "Join Voting"}
-          </button>
-          {loginError && <p style={{ color: "red" }}>{loginError}</p>}
-        </div>
-      ) : (
-        <div>
-          <h2>Welcome, {currentUser}!</h2>
-          <div>
-            {["A", "B", "C"].map((opt) => (
-              <button
-                key={opt}
-                onClick={() => handleVote(opt)}
-                disabled={hasVoted || isVoting}
-              >
-                Vote {opt}
+      <div className="voting-container">
+        <header className="voting-header">
+          <h1 className="voting-title">Real-Time Voting App</h1>
+          {isLoggedIn && <div className="user-welcome"><span>Welcome, {currentUser}!</span></div>}
+        </header>
+
+        {!isLoggedIn && (
+          <div className="voting-card">
+            <h2 className="card-title">Login to Vote</h2>
+            <div className="login-container">
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Your name"
+                className="form-input"
+              />
+              <button onClick={handleLogin} disabled={isLoading} className="btn btn-primary">
+                {isLoading ? "Joining..." : "Join Voting"}
               </button>
-            ))}
+              {loginError && <div className="message error">{loginError}</div>}
+            </div>
           </div>
-          {voteMessage.text && <p>{voteMessage.text}</p>}
-          {voteError && <p style={{ color: "red" }}>{voteError}</p>}
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="votes" />
-            </BarChart>
-          </ResponsiveContainer>
-          <p>Total Votes: {totalVotes}</p>
-        </div>
-      )}
+        )}
+
+        {isLoggedIn && (
+          <>
+            <div className="voting-card">
+              <h2 className="card-title">Cast Your Vote</h2>
+              <div className="voting-options">
+                {["A", "B", "C"].map((option) => (
+                  <button
+                    key={option}
+                    onClick={() => handleVote(option)}
+                    disabled={hasVoted || isVoting}
+                    className={`vote-option ${
+                      votedOption === option ? "voted" : hasVoted ? "disabled" : ""
+                    }`}
+                  >
+                    <span className="option-label">Option {option}</span>
+                    <span className="option-desc">Choice {option}</span>
+                  </button>
+                ))}
+              </div>
+              {voteMessage.text && <div className={`message ${voteMessage.type}`}>{voteMessage.text}</div>}
+              {voteError && <div className="message error">{voteError}</div>}
+            </div>
+
+            <div className="voting-card">
+              <div className="results-header">
+                <h2 className="card-title">Live Results</h2>
+                <div className="results-info">
+                  <span>Total Votes: {totalVotes}</span>
+                  <span>{isConnected ? "Live Updates" : "Polling Mode"}</span>
+                </div>
+              </div>
+
+              <div className="chart-container">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="votes" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="progress-section">
+                {["A", "B", "C"].map((option) => (
+                  <div key={option} className="progress-row">
+                    <span className="progress-label">Option {option}</span>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${getPercentage(results[option])}%` }}></div>
+                    </div>
+                    <span className="progress-count">{results[option]}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="results-footer">
+                <span>Last updated: {lastUpdated || "Never"}</span>
+                <button onClick={fetchResults} className="btn btn-secondary">Refresh Now</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };
