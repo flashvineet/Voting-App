@@ -1,22 +1,19 @@
 const express = require("express");
-const session = require("express-session");
 const bodyParser = require("body-parser");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 const server = http.createServer(app);
 
-// Trust Render proxy (needed for secure cookies)
-app.set("trust proxy", 1);
-
 // Use env vars
 const PORT = process.env.PORT || 5000;
-const SESSION_SECRET = process.env.SESSION_SECRET || "fallback-secret";
+const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-// Socket.IO with proper CORS
+// Socket.IO
 const io = new Server(server, {
   cors: {
     origin: FRONTEND_URL,
@@ -35,54 +32,41 @@ app.use(
 
 app.use(bodyParser.json());
 
-// Session config
-app.use(
-  session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false, // don’t create empty sessions
-    proxy: true,              // important for Render
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // HTTPS only in production
-      sameSite: "none",       // allow cross-site cookies (Vercel <-> Render)
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    },
-  })
-);
-
 let votes = { A: 0, B: 0, C: 0 };
+let votedUsers = new Set(); // track who voted (by username)
 
-// LOGIN route
+// LOGIN route → issue JWT
 app.post("/login", (req, res) => {
   const { name } = req.body;
   if (!name) {
     return res.status(400).json({ message: "Name is required" });
   }
 
-  req.session.user = { name, voted: false };
+  const token = jwt.sign({ name }, JWT_SECRET, { expiresIn: "1d" });
 
-  // 🔑 Explicitly save session and send cookie
-  req.session.save((err) => {
-    if (err) {
-      console.error("Session save error:", err);
-      return res.status(500).json({ message: "Session error" });
-    }
-
-    res.json({ message: "Login successful", user: name });
-  });
+  res.json({ message: "Login successful", token, user: name });
 });
 
+// Auth middleware
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) return res.status(401).json({ message: "No token provided" });
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ message: "Invalid token" });
+    req.user = user;
+    next();
+  });
+}
+
 // VOTE route
-app.post("/vote", (req, res) => {
+app.post("/vote", authenticateToken, (req, res) => {
   const { option } = req.body;
-  const user = req.session.user;
+  const username = req.user.name;
 
-  if (!user) {
-    return res.status(401).json({ message: "Please login first" });
-  }
-
-  if (user.voted) {
+  if (votedUsers.has(username)) {
     return res.status(403).json({ message: "You already voted!" });
   }
 
@@ -91,9 +75,8 @@ app.post("/vote", (req, res) => {
   }
 
   votes[option] += 1;
-  user.voted = true;
+  votedUsers.add(username);
 
-  // Broadcast update to all clients
   io.emit("voteUpdate", votes);
 
   res.json({ message: `Vote casted for ${option}`, votes });
@@ -104,7 +87,7 @@ app.get("/results", (req, res) => {
   res.json({ votes });
 });
 
-// Socket.IO connections
+// Socket.IO
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
   socket.emit("voteUpdate", votes);
@@ -113,7 +96,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Start server
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
