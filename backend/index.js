@@ -34,15 +34,18 @@ app.use(
 );
 
 app.use(bodyParser.json());
+
+// Session config
 app.use(
   session({
     secret: SESSION_SECRET,
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false, // don’t create empty sessions
+    proxy: true,              // important for Render
     cookie: {
       httpOnly: true,
-      secure: true,        // cookie only over HTTPS
-      sameSite: "none",    // allow cross-site cookie (Vercel <-> Render)
+      secure: process.env.NODE_ENV === "production", // HTTPS only in production
+      sameSite: "none",       // allow cross-site cookies (Vercel <-> Render)
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     },
   })
@@ -56,12 +59,16 @@ app.post("/login", (req, res) => {
   if (!name) {
     return res.status(400).json({ message: "Name is required" });
   }
+
   req.session.user = { name, voted: false };
-   req.session.save((err) => {
+
+  // 🔑 Explicitly save session and send cookie
+  req.session.save((err) => {
     if (err) {
       console.error("Session save error:", err);
       return res.status(500).json({ message: "Session error" });
     }
+
     res.json({ message: "Login successful", user: name });
   });
 });
